@@ -1,17 +1,12 @@
-import xmltodict, json, requests
+import requests
 from requests.auth import HTTPBasicAuth
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage
-
-from src.utils.appconfig import AppConfig
-from src.utils.azureai import AzureAI
 from src.tools.nl_to_odata_tool import nl_to_odata
 from src.aiagents.nl2odata_agent import create_graph
 from src.llm.llm import get_llm
-
-
 
 router = APIRouter()
 
@@ -54,24 +49,23 @@ def convert_to_odata(query: Query):
                     1. Thought: Analyze query requirements (filtering, grouping, aggregation)
                     2. Action: Use nl_to_odata tool 
                     3. Observation: Verify syntax and completeness
-                    4. Response: Return OData query.
+                    4. Response: Return OData query
 
                 Rules:
                     - Use $apply for aggregations/grouping
-                    - Handle date ranges in YYYY-MM-DD format
-                    - Enclose values in single quotes
-                    - Include sap-statistics=true parameter
+                    - Handle date ranges with timestamps in YYYY-MM-DD
+                    - Enclose values in single quotes except for date ranges
 
                 Examples:
                     User: Show total orders by supplier
                     Thought: Need grouping by supplier with order count
                     Action: nl_to_odata("group by supplier and count orders")
-                    Response: $apply=groupby((SUPPLIER),aggregate(ORDER_NO with count as Total))?sap-statistics=true
+                    Response: $apply=groupby((SUPPLIER),aggregate(ORDER_NO with count as Total))
 
                     User: Find orders from supplier ABC created in 2023
                     Thought: Need filter for supplier and date range
                     Action: nl_to_odata("filter supplier equals ABC and creation date between 2023")
-                    Response: $apply=filter(SUPPLIER eq 'ABC' and CREAT_DATE gt '2023-01-01' and CREAT_DATE lt '2023-12-31')?sap-statistics=true
+                    Response: $apply=filter(SUPPLIER eq 'ABC' and CREAT_DATE gt '2023-01-01' and CREAT_DATE lt '2023-12-31')
                     """,
         ),
         ("placeholder", "{messages}"),
@@ -92,6 +86,7 @@ def convert_to_odata(query: Query):
             result.append(formatted_message)
     if not result:
         raise HTTPException(status_code=400, detail="Failed to convert query")
+    
     lines = result[-1].split('\n')
     # Extract the part between the two newline characters
     if len(lines) > 1:
@@ -106,32 +101,19 @@ def convert_to_odata(query: Query):
     print(api_url)
     
     response = call_odata_query(api_url)
-    
-    print(response)
+    print(message)
     return response
 
+
 def call_odata_query(endpoint: str):
+    try:
+        username = 'DEV_100'
+        password = 'Nestle1330$'
+        # Make the request
+        response = requests.get(endpoint, auth=HTTPBasicAuth(username, password))
+        print(response.status_code)
 
-    # Basic authentication credentials
-    username = 'DEV_100'
-    password = 'Nestle1330$'
-    # Make the request
-    response = requests.get(endpoint, auth=HTTPBasicAuth(username, password))
-    print(response.status_code)
+    except Exception as e:
+        print(f"The following exception has occured  {e}")
 
-
-    if response.status_code == 200:
-        # Convert XML to Python dictionary
-        try:
-            xml_data = xmltodict.parse(response.text)
-            
-            # Convert the dictionary to a JSON string
-            json_data = json.dumps(xml_data, indent=4)
-            
-            # Print or work with the JSON data
-            return json_data
-        except Exception as e:
-            print("Error parsing XML:", str(e))
-    else:
-        print(f"Error: Received response with status code {response.status_code}")
-
+        
